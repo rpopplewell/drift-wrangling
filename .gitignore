@@ -1,0 +1,3 @@
+*.json
+/driftenv
+__pycache__
