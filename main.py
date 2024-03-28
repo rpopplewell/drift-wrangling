@@ -40,7 +40,7 @@ class Client:
             "mainnet",
             tx_params=dptypes.TxParams(
                 compute_units=1_000_000,
-                compute_units_price=1_000_000,
+                compute_units_price=10_000_000,
             ),
         )
         await self.drift_client.add_user(0)
@@ -64,11 +64,9 @@ class Client:
 
     def getPositions(
         self,
-    ) -> tuple[float, float]:
+    ) -> list[dptypes.PerpPosition]:
         # IS LONG IF pos.base_asset_amount > 0, short if < 0
-        positions = self.drift_user.get_active_perp_positions()
-        for pos in positions:
-            return (pos.base_asset_amount, pos.quote_asset_amount)
+        return self.drift_user.get_active_perp_positions()
 
     async def setPosition(
         self, market_index: int, size: float, direction: dptypes.PositionDirection
@@ -90,19 +88,32 @@ class Client:
 
         print(sig)
 
-    async def closePosition(self, market_index: int) -> None:
-        user_acc = self.drift_user.get_user_account()
-        drift_pub_key = self.drift_client.get_user_account_public_key(0)
+    async def closePosition(self, pos: dptypes.PerpPosition) -> None:
+        if pos.base_asset_amount > 0:
+            direction = dptypes.PositionDirection.Short
+        else:
+            direction = dptypes.PositionDirection.Long
+
+        order = dptypes.OrderParams(
+            order_type=dptypes.OrderType.Market,
+            base_asset_amount=pos.base_asset_amount,
+            reduce_only=True,
+            market_index=pos.market_index,
+            direction=direction,
+        )
+        order.set_perp()
         sig = None
         while sig == None:
             try:
-                sig = await self.drift_client.settle_pnl(
-                    drift_pub_key, user_acc, market_index
-                )
+                sig = await self.drift_client.place_perp_order(order)
             except (RPCException, UnconfirmedTxError):
                 print("failed tx")
 
         print(sig)
+
+    async def closeAllPositions(self, positions: list[dptypes.PerpPosition]) -> None:
+        for pos in positions:
+            await self.closePosition(pos)
 
 
 async def main():
@@ -111,6 +122,8 @@ async def main():
     amount_to_buy_in_dollars = 10
     btc_price, eth_price = await cli.getMarketPrices()
     amount_to_buy_in_eth = amount_to_buy_in_dollars / eth_price
+
+    print("START")
 
     # await cli.setPosition(
     #     ETH_PERP_MARKET_INDEX,
@@ -123,11 +136,7 @@ async def main():
     positions = cli.getPositions()
     print(positions)
 
-    await cli.closePosition(ETH_PERP_MARKET_INDEX)
-    time.sleep(10)
-
-    positions = cli.getPositions()
-    print(positions)
+    await cli.closeAllPositions(positions)
 
     print("DONE")
 
