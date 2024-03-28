@@ -9,6 +9,8 @@ from driftpy.drift_user import DriftUser
 import driftpy.types as dptypes
 from driftpy.keypair import load_keypair
 from marketclient import MarketClient
+import time
+from solana.rpc.core import RPCException, UnconfirmedTxError
 
 ETH_PERP_MARKET_INDEX = 2
 BTC_PERP_MARKET_INDEX = 1
@@ -38,7 +40,7 @@ class Client:
             "mainnet",
             tx_params=dptypes.TxParams(
                 compute_units=1_000_000,
-                compute_units_price=100_000,
+                compute_units_price=1_000_000,
             ),
         )
         await self.drift_client.add_user(0)
@@ -79,14 +81,26 @@ class Client:
             direction=direction,
         )
         order.set_perp()
-        sig = await self.drift_client.place_perp_order(order)
+        sig = None
+        while sig == None:
+            try:
+                sig = await self.drift_client.place_perp_order(order)
+            except (RPCException, UnconfirmedTxError):
+                print("failed tx")
 
         print(sig)
 
     async def closePosition(self, market_index: int) -> None:
         user_acc = self.drift_user.get_user_account()
         drift_pub_key = self.drift_client.get_user_account_public_key(0)
-        sig = await self.drift_client.settle_pnl(drift_pub_key, user_acc, market_index)
+        sig = None
+        while sig == None:
+            try:
+                sig = await self.drift_client.settle_pnl(
+                    drift_pub_key, user_acc, market_index
+                )
+            except (RPCException, UnconfirmedTxError):
+                print("failed tx")
 
         print(sig)
 
@@ -104,12 +118,13 @@ async def main():
     #     dptypes.PositionDirection.Long,
     # )
 
-    # balance = cli.getBalance()
-    # print(balance)
+    # time.sleep(10)
+
     positions = cli.getPositions()
     print(positions)
 
     await cli.closePosition(ETH_PERP_MARKET_INDEX)
+    time.sleep(10)
 
     positions = cli.getPositions()
     print(positions)
