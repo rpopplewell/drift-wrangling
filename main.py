@@ -2,7 +2,7 @@ import json
 
 from solana.rpc.async_api import AsyncClient
 import asyncio
-from driftpy.constants import PRICE_PRECISION
+from driftpy.constants import PRICE_PRECISION, BASE_PRECISION
 from anchorpy import Wallet
 from driftpy.drift_client import DriftClient
 from driftpy.drift_user import DriftUser
@@ -39,8 +39,8 @@ class Client:
             Wallet(load_keypair(secret)),
             "mainnet",
             tx_params=dptypes.TxParams(
-                compute_units=1_000_000,
-                compute_units_price=10_000_000,
+                compute_units=1_400_000,
+                compute_units_price=1_600_000,
             ),
         )
         await self.drift_client.add_user(0)
@@ -65,8 +65,12 @@ class Client:
     def getPositions(
         self,
     ) -> list[dptypes.PerpPosition]:
-        # IS LONG IF pos.base_asset_amount > 0, short if < 0
-        return self.drift_user.get_active_perp_positions()
+        positions = self.drift_user.get_active_perp_positions()
+        for pos in positions:
+            if pos.base_asset_amount == 0:
+                positions.remove(pos)
+
+        return positions
 
     async def setPosition(
         self, market_index: int, size: float, direction: dptypes.PositionDirection
@@ -115,23 +119,53 @@ class Client:
         for pos in positions:
             await self.closePosition(pos)
 
+    def getPositionsState(self) -> tuple[float, float]:
+        positionState = ()
+        positions = self.getPositions()
+        for pos in positions:
+            if pos.market_index == BTC_PERP_MARKET_INDEX:
+                positionState[0] = pos.base_asset_amount / BASE_PRECISION
+            if pos.market_index == ETH_PERP_MARKET_INDEX:
+                positionState[1] = pos.base_asset_amount / BASE_PRECISION
+
+        return positionState
+
+    # position state: (btc_base_amount, eth_base_amount)
+    async def updatePositionState(self, newPositionState: tuple[float]):
+        oldPositionState = self.getPositionsState()
+        deltaPosition = [x[0] - x[1] for x in zip(newPositionState, oldPositionState)]
+        for i, pos in enumerate(deltaPosition):
+            if i == 0:
+                marketindex = BTC_PERP_MARKET_INDEX
+            elif i == 1:
+                marketindex = ETH_PERP_MARKET_INDEX
+            if pos >= 0:
+                direction = dptypes.PositionDirection.Long
+            elif pos < 0:
+                direction = dptypes.PositionDirection.Short
+
+            self.setPosition(marketindex, pos, direction)
+
 
 async def main():
     cli = Client()
     await cli.create()
     amount_to_buy_in_dollars = 10
+    import time
+
+    start_time = time.time()
     btc_price, eth_price = await cli.getMarketPrices()
+    print("--- %s seconds ---" % (time.time() - start_time))
     amount_to_buy_in_eth = amount_to_buy_in_dollars / eth_price
 
     print("START")
 
-    # await cli.setPosition(
-    #     ETH_PERP_MARKET_INDEX,
-    #     amount_to_buy_in_eth,
-    #     dptypes.PositionDirection.Long,
-    # )
-
-    # time.sleep(10)
+    await cli.setPosition(
+        ETH_PERP_MARKET_INDEX,
+        amount_to_buy_in_eth,
+        dptypes.PositionDirection.Long,
+    )
+    time.sleep(10)
 
     positions = cli.getPositions()
     print(positions)
