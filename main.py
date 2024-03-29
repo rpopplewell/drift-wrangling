@@ -156,17 +156,23 @@ class Client:
     async def updatePositionState(self, newPositionState: tuple[float]):
         oldPositionState = self.getPositionState()
         deltaPosition = [x[0] - x[1] for x in zip(newPositionState, oldPositionState)]
+        calls = []
+
         for i, pos in enumerate(deltaPosition):
             if i == 0:
                 marketindex = BTC_PERP_MARKET_INDEX
             elif i == 1:
                 marketindex = ETH_PERP_MARKET_INDEX
+
             if pos >= 0:
                 direction = dptypes.PositionDirection.Long
             elif pos < 0:
                 direction = dptypes.PositionDirection.Short
 
-            await self.setPosition(marketindex, abs(pos), direction)
+            call = self.setPosition(marketindex, abs(pos), direction)
+            calls.append(call)
+
+        await asyncio.gather(*calls)
 
     async def sendTx(self, func, order):
         sig = None
@@ -233,18 +239,11 @@ async def main():
 
     print("START")
 
-    # await cli.setPosition(
-    #     ETH_PERP_MARKET_INDEX,
-    #     amount_to_buy_in_eth,
-    #     dptypes.PositionDirection.Long,
-    # )
-    # time.sleep(30)
+    new_pos_state = tuple(1, -1)
+    print("NEW POS STATE: ", new_pos_state)
+    await cli.updatePositionState(new_pos_state)
 
-    # pos_state = cli.getPositionState()
-    # print("CURRENT POS STATE: ", pos_state)
-    # new_pos_state = tuple(-x for x in pos_state)
-    # print("NEW POS STATE: ", new_pos_state)
-    # await cli.updatePositionState(new_pos_state)
+    await cli.closeAllPositions()
 
     # positions = cli.getPositions()
     # print(positions)
