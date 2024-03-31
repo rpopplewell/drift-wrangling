@@ -47,8 +47,8 @@ class Client:
             Wallet(load_keypair(secret)),
             "mainnet",
             tx_params=dptypes.TxParams(
-                compute_units=1_000_000,
-                compute_units_price=2_000_000,
+                compute_units=2_000_000,
+                compute_units_price=7_000_000,
             ),
         )
         await self.drift_client.add_user(0)
@@ -57,13 +57,6 @@ class Client:
         await self.drift_user.account_subscriber.fetch()
 
         return self
-
-    async def getMarketPrices(self) -> tuple[float, float]:
-        btc_price, eth_price = await asyncio.gather(
-            self.market_client.getMarketPrice("BTC-PERP"),
-            self.market_client.getMarketPrice("ETH-PERP"),
-        )
-        return btc_price, eth_price
 
     def getBalance(
         self,
@@ -99,16 +92,14 @@ class Client:
                 if "Order Amount Too Small" in str(e) or "0x17ab" in str(e):
                     print("Order amount too small, skipping...")
                     break
-                else:
-                    print("failed tx: " + str(e))
+                elif "Blockhash not found" in str(e):
+                    print("blockhash not found")
             except UnconfirmedTxError as e:
                 tx_sig = str(e).split(" ")[-1]
                 print()
                 ok = self.CheckTx(tx_sig)
                 if ok:
                     break
-                else:
-                    print("failed tx: " + str(e))
 
         if sig:
             print(sig)
@@ -201,7 +192,6 @@ class Client:
         tx_sig = Signature.from_string(sig)
         res: GetTransactionResp = None
         for i in range(1, 10):
-            print(f"Checking if Tx has been confirmed {i}")
             try:
                 res = self.sol_client.get_transaction(
                     tx_sig, max_supported_transaction_version=0
@@ -210,14 +200,13 @@ class Client:
                 print(f"Error: Can't verify tx Exception: {e}")
                 pass
             if res is not None:
-                print(res)
                 my_regex = STRING_TO_CHECK + " success"
                 match = re.search(my_regex, res.to_json())
                 if match:
-                    print(f"Tx confirmed as a success")
+                    print(f"Tx succeeded")
                     return True
                 else:
-                    print(f"Tx confirmed but failed")
+                    print(f"Tx failed")
                     return False
 
             time.sleep(2)
@@ -233,17 +222,18 @@ async def main():
     import time
 
     start_time = time.time()
-    btc_price, eth_price = await cli.getMarketPrices()
+    btc_price, eth_price = await cli.market_client.getMarketPrices()
     print("--- %s seconds ---" % (time.time() - start_time))
     amount_to_buy_in_eth = amount_to_buy_in_dollars / eth_price
+    amount_to_buy_in_btc = amount_to_buy_in_dollars / btc_price
 
     print("START")
 
-    new_pos_state = tuple(1, -1)
+    new_pos_state = (amount_to_buy_in_btc, -amount_to_buy_in_eth)
     print("NEW POS STATE: ", new_pos_state)
     await cli.updatePositionState(new_pos_state)
 
-    await cli.closeAllPositions()
+    # await cli.closeAllPositions()
 
     # positions = cli.getPositions()
     # print(positions)
@@ -252,10 +242,6 @@ async def main():
 
     # print(cli.getPositionState())
     # time.sleep(10)
-
-    sig = "3gN5aGmkp4qnnuGVLbWKmq2bUsrTmVTsSEPwkwdPJYqYsvU9X2Kg5HvqNC9GFS1HbNDkhW24nabbGYcduGXEJ9T5"
-
-    cli.CheckTx(sig)
 
     print("DONE")
 

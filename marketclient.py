@@ -1,6 +1,11 @@
 import aiohttp
 from driftpy.constants import PRICE_PRECISION
 import json
+import asyncio
+
+
+ETH_PERP = "ETH-PERP"
+BTC_PERP = "BTC-PERP"
 
 
 class MarketClient:
@@ -32,3 +37,10 @@ class MarketClient:
             # Handle the case where resp is None
             print("Failed to get market price.")
             return None
+
+    async def getMarketPrices(self) -> list[float]:
+        btc_price, eth_price = await asyncio.gather(
+            self.getMarketPrice(BTC_PERP),
+            self.getMarketPrice(ETH_PERP),
+        )
+        return [btc_price, eth_price]
